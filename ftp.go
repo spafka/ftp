@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/textproto"
@@ -40,7 +41,7 @@ type ServerConn struct {
 	mlstSupported bool
 }
 
-// DialOption represents an option to start a new connection with Dial
+// DialOption represents an option to start a new connection with DialWithOptions
 type DialOption struct {
 	setup func(do *dialOptions)
 }
@@ -64,6 +65,10 @@ type Entry struct {
 	Time time.Time
 }
 
+func (e *Entry) String() string {
+	return fmt.Sprintf("Name:%s,Type:%d,Size:%d,Time:%s", e.Name, e.Type, e.Size, e.Time)
+}
+
 // Response represents a data-connection
 type Response struct {
 	conn   net.Conn
@@ -71,8 +76,8 @@ type Response struct {
 	closed bool
 }
 
-// Dial connects to the specified address with optinal options
-func Dial(addr string, options ...DialOption) (*ServerConn, error) {
+// DialWithOptions connects to the specified address with optinal options
+func DialWithOptions(addr string, options ...DialOption) (*ServerConn, error) {
 	do := &dialOptions{}
 	for _, option := range options {
 		option.setup(do)
@@ -197,12 +202,17 @@ func Connect(addr string) (*ServerConn, error) {
 	return Dial(addr)
 }
 
+// Dial is like DialTimeout with no timeout
+func Dial(addr string) (*ServerConn, error) {
+	return DialTimeout(addr, 0)
+}
+
 // DialTimeout initializes the connection to the specified ftp server address.
 //
 // It is generally followed by a call to Login() as most FTP commands require
 // an authenticated user.
 func DialTimeout(addr string, timeout time.Duration) (*ServerConn, error) {
-	return Dial(addr, DialWithTimeout(timeout))
+	return DialWithOptions(addr, DialWithTimeout(timeout))
 }
 
 // Login authenticates the client with specified user and password.
@@ -454,6 +464,21 @@ func (c *ServerConn) NameList(path string) (entries []string, err error) {
 		return entries, err
 	}
 	return
+}
+
+type EntryWrapper struct { //注意此处
+	Entry []*Entry
+	By    func(p, q *Entry) bool
+}
+
+func (pw EntryWrapper) Len() int { // 重写 Len() 方法
+	return len(pw.Entry)
+}
+func (pw EntryWrapper) Swap(i, j int) { // 重写 Swap() 方法
+	*pw.Entry[i], *pw.Entry[j] = *pw.Entry[j], *pw.Entry[i]
+}
+func (pw EntryWrapper) Less(i, j int) bool { // 重写 Less() 方法
+	return pw.By(pw.Entry[i], pw.Entry[j])
 }
 
 // List issues a LIST FTP command.
